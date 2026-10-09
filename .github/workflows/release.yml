@@ -1,30 +1,16 @@
 name: Release Startup Launcher
-run-name: ${{ github.event.client_payload.release_name || inputs.release_name || github.event.inputs.release_name }}
+run-name: ${{ github.ref_name }}
 
 on:
-  repository_dispatch:
-    types:
-      - startup-launcher-release
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: Version tag to build
-        required: true
-        type: string
-      release_name:
-        description: Summary of all functional differences from the previous tag
-        required: true
-        type: string
-      release_body:
-        description: Full annotated tag content used as the release body
-        required: true
-        type: string
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: write
 
 concurrency:
-  group: startup-launcher-release-${{ github.event.client_payload.tag || inputs.tag }}
+  group: startup-launcher-release-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -36,7 +22,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.client_payload.tag || inputs.tag }}
+          ref: ${{ github.ref }}
 
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
@@ -45,20 +31,20 @@ jobs:
         id: version
         shell: pwsh
         env:
-          RELEASE_TAG: ${{ github.event.client_payload.tag || inputs.tag }}
-          RELEASE_NAME: ${{ github.event.client_payload.release_name || inputs.release_name }}
-          RELEASE_BODY: ${{ github.event.client_payload.release_body || inputs.release_body }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           $tag = $env:RELEASE_TAG
           if ($tag -notmatch '^v\d+\.\d+\.\d+$') {
             throw "Tag must use vX.Y.Z format, got: $tag"
           }
-          if (-not $env:RELEASE_NAME) {
-            throw "Tag $tag is missing the complete summary for the Action run name"
-          }
-          if (-not $env:RELEASE_BODY) {
+          $tagBody = (@(git for-each-ref "refs/tags/$tag" --format='%(contents)') -join "`n").TrimEnd("`r", "`n")
+          if (-not $tagBody) {
             throw "Tag $tag is missing its annotated content"
           }
+          $delimiter = [guid]::NewGuid().ToString('N')
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "release_body<<$delimiter"
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value $tagBody
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value $delimiter
           Add-Content -LiteralPath $env:GITHUB_ENV -Value "STARTUP_LAUNCHER_VERSION=$tag"
 
       - name: Build Windows executable
@@ -73,9 +59,9 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.client_payload.tag || inputs.tag }}
-          name: ${{ github.event.client_payload.tag || inputs.tag }}
-          body: ${{ github.event.client_payload.release_body || inputs.release_body }}
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: ${{ steps.version.outputs.release_body }}
           generate_release_notes: false
           files: release/StartupLauncher.exe
           overwrite_files: true
