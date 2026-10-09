@@ -1173,12 +1173,80 @@ fn prepare_self_update(bytes: &[u8]) -> Result<(), String> {
         std::env::temp_dir().join(format!("StartupLauncher-update-{}.exe", std::process::id()));
     let script =
         std::env::temp_dir().join(format!("StartupLauncher-update-{}.ps1", std::process::id()));
+    let log =
+        std::env::temp_dir().join(format!("StartupLauncher-update-{}.log", std::process::id()));
     fs::write(&temp, bytes).map_err(|e| format!("保存更新文件失败：{e}"))?;
     let script_text = format!(
-        "$ErrorActionPreference = 'Stop'\n$source = {}\n$target = {}\n$targetProcessId = {}\n$deadline = (Get-Date).AddSeconds(45)\nwhile ((Get-Process -Id $targetProcessId -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) {{ Start-Sleep -Milliseconds 200 }}\nfor ($attempt = 0; $attempt -lt 30; $attempt++) {{ try {{ Copy-Item -LiteralPath $source -Destination $target -Force; Start-Process -FilePath $target; Remove-Item -LiteralPath $source -Force -ErrorAction SilentlyContinue; Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue; exit 0 }} catch {{ Start-Sleep -Milliseconds 300 }} }}\n",
-        ps_quote(&temp.to_string_lossy()), ps_quote(&current.to_string_lossy()), std::process::id()
+        r#"$ErrorActionPreference = 'Stop'
+$source = {}
+$target = {}
+$targetProcessId = {}
+$log = {}
+$staged = "${{target}}.update-${{targetProcessId}}"
+$backup = "${{target}}.backup-${{targetProcessId}}"
+function Write-UpdateLog([string]$message) {{
+  Add-Content -LiteralPath $log -Value "$(Get-Date -Format s) $message"
+}}
+function Get-TargetProcessCount {{
+  return @(
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+      Where-Object {{ $_.ExecutablePath -and [string]::Equals($_.ExecutablePath, $target, [StringComparison]::OrdinalIgnoreCase) }}
+  ).Count
+}}
+try {{
+  Write-UpdateLog 'Waiting for launcher processes to exit.'
+  $deadline = (Get-Date).AddSeconds(90)
+  $running = Get-TargetProcessCount
+  while ($running -gt 0 -and (Get-Date) -lt $deadline) {{
+    Start-Sleep -Milliseconds 250
+    $running = Get-TargetProcessCount
+  }}
+  if ($running -gt 0) {{ throw 'Startup Launcher is still running.' }}
+
+  $sourceHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+  for ($attempt = 1; $attempt -le 60; $attempt++) {{
+    try {{
+      Copy-Item -LiteralPath $source -Destination $staged -Force
+      if ((Get-FileHash -LiteralPath $staged -Algorithm SHA256).Hash -ne $sourceHash) {{
+        throw 'Staged update checksum does not match the download.'
+      }}
+      if (Test-Path -LiteralPath $target) {{
+        Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+        [IO.File]::Replace($staged, $target, $backup)
+      }} else {{
+        Move-Item -LiteralPath $staged -Destination $target
+      }}
+      if ((Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash -ne $sourceHash) {{
+        throw 'Replaced executable checksum does not match the download.'
+      }}
+      Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+      Start-Process -FilePath $target
+      Write-UpdateLog 'Update replaced the executable and restarted Startup Launcher.'
+      Remove-Item -LiteralPath $source -Force -ErrorAction SilentlyContinue
+      Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
+      exit 0
+    }} catch {{
+      Write-UpdateLog "Attempt $attempt failed: $($_.Exception.Message)"
+      Start-Sleep -Seconds 1
+    }}
+  }}
+  throw 'Could not replace the executable after 60 attempts.'
+}} catch {{
+  Write-UpdateLog "Update failed: $($_.Exception.Message)"
+  try {{
+    Add-Type -AssemblyName System.Windows.Forms
+    [System.Windows.Forms.MessageBox]::Show("更新失败，请查看日志：`n$log", 'Startup Launcher 更新失败', 'OK', 'Error') | Out-Null
+  }} catch {{}}
+  exit 1
+}}
+"#,
+        ps_quote(&temp.to_string_lossy()),
+        ps_quote(&current.to_string_lossy()),
+        std::process::id(),
+        ps_quote(&log.to_string_lossy())
     );
-    fs::write(&script, script_text).map_err(|e| format!("创建更新脚本失败：{e}"))?;
+    fs::write(&script, format!("\u{feff}{script_text}"))
+        .map_err(|e| format!("创建更新脚本失败：{e}"))?;
     Command::new("powershell.exe")
         .args([
             "-NoProfile",
