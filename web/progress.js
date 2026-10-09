@@ -132,7 +132,7 @@ async function registerEvents() {
     updateProgress(payload);
   });
   await listen('launch-finished', () => {
-    invoke('dismiss_launch_progress');
+    invoke('finish_launch_progress');
   });
   await listen('update-status', ({ payload }) => setMessage(payload));
   await listen('update-current', ({ payload }) => setMessage(payload));

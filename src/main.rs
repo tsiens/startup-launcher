@@ -167,6 +167,7 @@ struct LaunchControl {
     network_ready: Arc<AtomicBool>,
     entry_count: Arc<AtomicUsize>,
     started_entries: Arc<Mutex<HashSet<usize>>>,
+    keep_main_open: Arc<AtomicBool>,
 }
 
 fn wide(value: &str) -> Vec<u16> {
@@ -544,7 +545,11 @@ fn close_launch_progress(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn dismiss_launch_progress(app: AppHandle) -> Result<(), String> {
+fn dismiss_launch_progress(
+    app: AppHandle,
+    control: State<'_, LaunchControl>,
+) -> Result<(), String> {
+    control.keep_main_open.store(true, Ordering::SeqCst);
     if let Some(progress) = app.get_webview_window("launch-progress") {
         progress
             .destroy()
@@ -553,6 +558,19 @@ fn dismiss_launch_progress(app: AppHandle) -> Result<(), String> {
     if let Some(main) = app.get_webview_window("main") {
         let _ = main.show();
         let _ = main.set_focus();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn finish_launch_progress(app: AppHandle, control: State<'_, LaunchControl>) -> Result<(), String> {
+    if let Some(progress) = app.get_webview_window("launch-progress") {
+        progress
+            .destroy()
+            .map_err(|e| format!("关闭启动进度窗口失败：{e}"))?;
+    }
+    if is_autostart() && !control.keep_main_open.load(Ordering::SeqCst) {
+        app.exit(0);
     }
     Ok(())
 }
@@ -1282,6 +1300,7 @@ fn main() {
             take_launch_request,
             close_launch_progress,
             dismiss_launch_progress,
+            finish_launch_progress,
             jump_to_launch,
             check_updates,
             install_update
