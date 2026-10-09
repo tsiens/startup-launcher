@@ -37,6 +37,15 @@ jobs:
           if ($tag -notmatch '^v\d+\.\d+\.\d+$') {
             throw "Tag must use vX.Y.Z format, got: $tag"
           }
+          $tagRef = "refs/tags/${tag}:refs/tags/${tag}"
+          git fetch --force --no-tags origin $tagRef 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not fetch annotated tag $tag"
+          }
+          $tagType = git cat-file -t $tag
+          if ($LASTEXITCODE -ne 0 -or $tagType -ne 'tag') {
+            throw "Release tag $tag must be annotated"
+          }
           $tagBody = (@(git for-each-ref "refs/tags/$tag" --format='%(contents)') -join "`n").TrimEnd("`r", "`n")
           if (-not $tagBody) {
             throw "Tag $tag is missing its annotated content"
