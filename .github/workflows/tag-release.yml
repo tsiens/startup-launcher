@@ -20,7 +20,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Dispatch release build with tag summary
+      - name: Dispatch release build with tag content
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPOSITORY: ${{ github.repository }}
@@ -31,10 +31,9 @@ jobs:
             echo "Tag must use vX.Y.Z format, got: $RELEASE_TAG" >&2
             exit 1
           }
-          title="$(git for-each-ref "refs/tags/$RELEASE_TAG" --format='%(contents:subject)')"
           message="$(git for-each-ref "refs/tags/$RELEASE_TAG" --format='%(contents)')"
-          [[ -n "$title" && -n "$message" ]] || {
-            echo "Tag $RELEASE_TAG must be annotated with a release summary" >&2
+          [[ -n "$message" ]] || {
+            echo "Tag $RELEASE_TAG must be annotated with functional differences" >&2
             exit 1
           }
           run_name="$(printf '%s\n' "$message" | sed -E '/^[[:space:]]*$/d; s/^[[:space:]]*-[[:space:]]*//' | awk 'NR == 1 { printf "%s", $0; next } { printf " · %s", $0 }')"
@@ -42,8 +41,8 @@ jobs:
             echo "Could not summarize tag annotation for $RELEASE_TAG" >&2
             exit 1
           }
-          jq -n --arg tag "$RELEASE_TAG" --arg summary "$run_name" --arg title "$title" \
-            '{ref:"main",inputs:{tag:$tag,release_title:$title,release_name:$summary}}' \
+          jq -n --arg tag "$RELEASE_TAG" --arg summary "$run_name" --arg body "$message" \
+            '{ref:"main",inputs:{tag:$tag,release_name:$summary,release_body:$body}}' \
             | curl --fail-with-body --silent --show-error \
                 -X POST "https://api.github.com/repos/$REPOSITORY/actions/workflows/release.yml/dispatches" \
                 -H "Authorization: Bearer $GH_TOKEN" \
