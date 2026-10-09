@@ -1,0 +1,34 @@
+[package]
+name = "startup-launcher"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77.2"
+description = "A portable Windows startup sequence launcher"
+repository = "https://github.com/tsiens/startup-launcher"
+build = "build.rs"
+
+[dependencies]
+base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["png"] }
+rfd = { version = "0.15.4", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = "2"
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Registry",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging"
+] }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

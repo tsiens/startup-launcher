@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Startup Launcher</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="window-shell">
+    <header class="titlebar" data-tauri-drag-region>
+      <div class="brand">
+        <img class="brand-icon" id="brandIcon" alt="">
+        <div><strong>Startup Launcher</strong><small>开机启动顺序管理</small></div>
+      </div>
+      <div class="header-state"><span class="app-version" id="appVersion">v—</span><i class="state-dot"></i><span id="headerState">配置已就绪</span><button class="window-close-button" id="closeButton" type="button" aria-label="关闭窗口" title="关闭窗口">×</button></div>
+    </header>
+
+    <main>
+      <section class="intro">
+        <div>
+          <span class="eyebrow">SEQUENCE</span>
+          <h1 id="viewTitle">启动顺序</h1>
+          <p id="viewDescription">按顺序启动应用，并可等待窗口出现后继续。</p>
+        </div>
+        <div class="toolbar" id="editToolbar">
+          <button class="button secondary" id="runButton"><span class="play-icon">▶</span> 立即运行</button>
+          <button class="button primary" id="addButton"><span class="plus-icon">+</span> 添加软件</button>
+        </div>
+      </section>
+
+      <div class="network-check-row">
+        <label for="networkTarget">联网检测</label>
+        <input class="field-control" id="networkTarget" type="text" placeholder="网址或 IP 地址，例如 223.5.5.5">
+        <span>连接成功后才会启动</span>
+      </div>
+
+      <section id="editorView" class="entry-list" aria-label="启动项列表"></section>
+      <div id="emptyState" class="empty-state" hidden>
+        <span class="empty-mark">＋</span>
+        <strong>还没有启动项</strong>
+        <p>添加一个应用开始设置启动顺序。</p>
+        <button class="button primary" id="emptyAddButton">添加软件</button>
+      </div>
+    </main>
+
+    <footer class="footer-bar">
+      <div class="footer-status"><i class="status-indicator"></i><span id="statusText">正在读取配置…</span></div>
+      <div class="footer-actions" id="editorActions">
+        <span class="config-note" id="dirtyNote">更改尚未保存</span>
+        <button class="button startup-button" id="startupButton">添加到开机启动</button>
+      </div>
+    </footer>
+  </div>
+
+  <div class="modal-backdrop" id="updateModal" hidden>
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="updateTitle">
+      <div class="modal-icon">↻</div>
+      <div class="modal-copy">
+        <span class="eyebrow">SOFTWARE UPDATE</span>
+        <h2 id="updateTitle">发现新版本</h2>
+        <p id="updateMessage"></p>
+      </div>
+      <div class="modal-actions">
+        <button class="button secondary" id="laterButton">稍后</button>
+        <button class="button primary" id="updateButton">下载并重启</button>
+      </div>
+    </section>
+  </div>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>

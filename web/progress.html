@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>启动进度 - Startup Launcher</title>
+  <link rel="stylesheet" href="progress.css">
+</head>
+<body>
+  <div class="progress-shell">
+    <div class="window-drag-region" data-tauri-drag-region></div>
+    <div class="window-actions">
+      <button class="window-action" id="settingsButton" type="button" aria-label="打开设置" title="打开设置">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+      </button>
+      <button class="window-action" id="closeProgressButton" type="button" aria-label="关闭" title="关闭">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 18M21 3 3 21"/></svg>
+      </button>
+    </div>
+    <main>
+      <section class="launch-track" aria-label="启动项顺序">
+        <div class="launch-track-inner" id="launchTrack"></div>
+      </section>
+      <section class="progress-info" aria-live="polite">
+        <div class="progress-detail">
+          <div class="progress-window" id="progressWindow"></div>
+          <div class="progress-countdown" id="progressCountdown"></div>
+        </div>
+        <div class="progress-message" id="progressMessage"></div>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" id="updateModal" hidden>
+    <section class="update-modal" role="dialog" aria-modal="true" aria-labelledby="updateTitle">
+      <div class="modal-mark">↻</div>
+      <div class="modal-copy">
+        <span class="eyebrow">SOFTWARE UPDATE</span>
+        <h2 id="updateTitle">发现新版本</h2>
+        <p id="updateMessage"></p>
+      </div>
+      <div class="modal-actions">
+        <button class="button secondary" id="laterButton">稍后</button>
+        <button class="button primary" id="updateButton">下载并重启</button>
+      </div>
+    </section>
+  </div>
+  <script src="progress.js"></script>
+</body>
+</html>
