@@ -1,5 +1,5 @@
 name: Release Startup Launcher
-run-name: ${{ inputs.release_name }}
+run-name: ${{ github.event.inputs.release_name || inputs.release_name || github.event.inputs.release_title || inputs.release_title }}
 
 on:
   workflow_dispatch:
@@ -9,11 +9,11 @@ on:
         required: true
         type: string
       release_title:
-        description: Concise title copied from the annotated tag subject
+        description: Concise title for the functional differences from the previous tag
         required: true
         type: string
       release_name:
-        description: Summary of the complete annotated tag content
+        description: Summary of all functional differences from the previous tag
         required: true
         type: string
 
@@ -44,6 +44,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.tag }}
           RELEASE_TITLE: ${{ inputs.release_title }}
+          RELEASE_NAME: ${{ inputs.release_name }}
         run: |
           $tag = $env:RELEASE_TAG
           if ($tag -notmatch '^v\d+\.\d+\.\d+$') {
@@ -51,6 +52,9 @@ jobs:
           }
           if (-not $env:RELEASE_TITLE) {
             throw "Tag $tag is missing its release summary"
+          }
+          if (-not $env:RELEASE_NAME) {
+            throw "Tag $tag is missing the complete summary for the Action run name"
           }
           "release_title=$($env:RELEASE_TITLE)" | Add-Content -LiteralPath $env:GITHUB_OUTPUT
           Add-Content -LiteralPath $env:GITHUB_ENV -Value "STARTUP_LAUNCHER_VERSION=$tag"
