@@ -26,7 +26,9 @@ button { color: inherit; cursor: pointer; }
 .brand strong { font-size: 14px; font-weight: 650; }
 .brand small { margin-top: 3px; color: var(--muted); font-size: 11px; }
 .header-state { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; }
-.app-version { margin-right: 3px; padding-right: 11px; border-right: 1px solid var(--line); color: #526174; font-weight: 600; }
+.app-version { min-height: 24px; margin-right: 3px; padding: 0 10px 0 0; border: 0; border-right: 1px solid var(--line); background: transparent; color: #526174; font-size: 11px; font-weight: 600; }
+.app-version:hover { color: var(--accent); }
+.app-version:disabled { cursor: wait; opacity: .65; }
 .window-close-button { width: 22px; height: 22px; flex: 0 0 22px; display: grid; place-items: center; margin-left: 2px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font-size: 17px; line-height: 1; }
 .window-close-button:hover { background: #fce9eb; color: var(--red); }
 .window-close-button:focus-visible { outline: 2px solid #5486e5; outline-offset: 1px; }
@@ -127,6 +129,10 @@ h1 { margin-top: 4px; font-size: 22px; font-weight: 650; }
 .modal-icon { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 11px; background: #edf4ff; color: #2563eb; font-size: 22px; }
 .modal-copy h2 { margin-top: 5px; font-size: 17px; }
 .modal-copy p { margin-top: 8px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.download-progress { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) 40px; align-items: center; gap: 10px; margin-top: 14px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.download-progress-track { height: 7px; overflow: hidden; border-radius: 4px; background: #e8edf3; }
+.download-progress-track > div { width: 0; height: 100%; border-radius: inherit; background: var(--accent); transition: width .16s ease; }
+.download-progress > span { text-align: right; }
 .modal-actions { grid-column: 2; display: flex; justify-content: end; gap: 8px; margin-top: 12px; }
 .toast { position: fixed; right: 18px; bottom: 68px; z-index: 10; max-width: 420px; padding: 10px 13px; border: 1px solid #d4dce6; border-radius: 6px; background: #ffffff; color: var(--text); box-shadow: 0 9px 28px rgba(31,45,65,.16); }
 @media (max-width: 900px) {

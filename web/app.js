@@ -7,6 +7,8 @@ const argumentMeasureContext = document.createElement('canvas').getContext('2d')
 
 let state = null;
 let toastTimer = null;
+let checkingUpdate = false;
+let downloadingUpdate = false;
 const iconCache = new Map();
 let defaultIcon = '';
 
@@ -173,6 +175,7 @@ async function initialize() {
   try {
     state = await invoke('get_state');
     $('appVersion').textContent = state.version || 'v0.1.0';
+    $('appVersion').setAttribute('aria-label', `当前版本 ${$('appVersion').textContent}，点击检查更新`);
     try {
       const icon = await invoke('default_icon');
       if (icon) $('brandIcon').src = icon;
@@ -195,7 +198,7 @@ async function initialize() {
     if (launchedOnBoot) {
       try {
         await invoke('set_main_window_visible', { visible: false });
-        await invoke('open_launch_progress', { config: state.config, checkAfter: true });
+        await invoke('open_launch_progress', { config: state.config });
       } catch (error) {
         await invoke('set_main_window_visible', { visible: true });
         throw error;
@@ -204,8 +207,6 @@ async function initialize() {
     }
     await invoke('set_main_window_visible', { visible: true });
     await loadExecutableIcons();
-    setStatus('正在检查更新…', 'busy');
-    await invoke('check_updates');
   } catch (error) {
     setStatus(String(error), 'error');
     showToast(String(error), 'error');
@@ -332,34 +333,92 @@ $('startupButton').addEventListener('click', async () => {
 
 $('runButton').addEventListener('click', async () => {
   try {
-    await invoke('open_launch_progress', { config: state.config, checkAfter: false });
+    await invoke('open_launch_progress', { config: state.config });
   } catch (error) { showToast(String(error), 'error'); }
 });
 
 $('closeButton').addEventListener('click', () => invoke('close_main_window'));
 
-$('laterButton').addEventListener('click', () => { $('updateModal').hidden = true; });
-$('updateModal').addEventListener('click', (event) => {
-  if (event.target === $('updateModal')) $('updateModal').hidden = true;
-});
-$('updateButton').addEventListener('click', async () => {
-  $('updateModal').hidden = true;
-  setStatus('正在下载更新，完成后会自动重启…', 'busy');
-  try { await invoke('install_update'); }
-  catch (error) { setStatus(String(error), 'error'); showToast(String(error), 'error'); }
+$('appVersion').addEventListener('click', async () => {
+  if (checkingUpdate || downloadingUpdate) return;
+  checkingUpdate = true;
+  $('appVersion').disabled = true;
+  setStatus('正在检查更新…', 'busy');
+  try { await invoke('check_updates'); }
+  catch (error) {
+    checkingUpdate = false;
+    $('appVersion').disabled = false;
+    showUpdateDialog('检查更新失败', String(error), false);
+    setStatus('检查更新失败', 'error');
+  }
 });
 
+$('laterButton').addEventListener('click', () => { $('updateModal').hidden = true; });
+$('updateModal').addEventListener('click', (event) => {
+  if (event.target === $('updateModal') && !downloadingUpdate) $('updateModal').hidden = true;
+});
+$('updateButton').addEventListener('click', async () => {
+  downloadingUpdate = true;
+  $('appVersion').disabled = true;
+  $('updateTitle').textContent = '正在下载更新';
+  $('updateMessage').textContent = '下载完成后将替换当前程序并自动重启。';
+  $('downloadProgress').hidden = false;
+  $('downloadProgressFill').style.width = '0%';
+  $('downloadProgressText').textContent = '0%';
+  $('laterButton').hidden = true;
+  $('updateButton').hidden = true;
+  setStatus('正在下载更新…', 'busy');
+  try { await invoke('install_update'); }
+  catch (error) {
+    downloadingUpdate = false;
+    $('appVersion').disabled = false;
+    showUpdateDialog('更新失败', String(error), false);
+    setStatus('更新失败', 'error');
+  }
+});
+
+function showUpdateDialog(title, message, hasUpdate) {
+  $('updateTitle').textContent = title;
+  $('updateMessage').textContent = message;
+  $('downloadProgress').hidden = true;
+  $('laterButton').hidden = false;
+  $('laterButton').textContent = hasUpdate ? '稍后' : '关闭';
+  $('updateButton').hidden = !hasUpdate;
+  $('updateButton').textContent = '下载并重启';
+  $('updateModal').hidden = false;
+}
+
 async function registerEvents() {
-  await listen('update-status', ({ payload }) => setStatus(payload, 'busy'));
+  await listen('update-status', ({ payload }) => {
+    setStatus(payload, 'busy');
+    if (downloadingUpdate) $('updateMessage').textContent = payload;
+  });
   await listen('update-available', ({ payload }) => {
-    $('updateMessage').textContent = `发现版本 ${payload.version}（当前版本 ${payload.currentVersion}）。下载后将替换程序并自动重启。`;
-    $('updateModal').hidden = false;
+    checkingUpdate = false;
+    $('appVersion').disabled = false;
+    showUpdateDialog('发现新版本', `发现版本 ${payload.version}（当前版本 ${payload.currentVersion}）。下载后将替换程序并自动重启。`, true);
     setStatus(`发现新版本 ${payload.version}`, 'busy');
   });
   await listen('update-error', ({ payload }) => {
+    const updateFailed = downloadingUpdate;
+    checkingUpdate = false;
+    downloadingUpdate = false;
+    $('appVersion').disabled = false;
+    showUpdateDialog(updateFailed ? '更新失败' : '检查更新失败', payload, false);
     setStatus(payload, 'error');
   });
-  await listen('update-current', ({ payload }) => setStatus(payload));
+  await listen('update-current', ({ payload }) => {
+    checkingUpdate = false;
+    $('appVersion').disabled = false;
+    showUpdateDialog('没有可用更新', `当前已是最新版本（${state?.version || ''}）。`, false);
+    setStatus(payload);
+  });
+  await listen('update-progress', ({ payload }) => {
+    const percent = Math.max(0, Math.min(100, Number(payload.percent) || 0));
+    $('downloadProgress').hidden = false;
+    $('downloadProgressFill').style.width = `${percent}%`;
+    $('downloadProgressText').textContent = `${percent}%`;
+  });
 }
 
 registerEvents().catch((error) => {

@@ -9,7 +9,6 @@ let defaultIcon = '';
 
 let config = { entries: [] };
 let activeIndex = 0;
-let checkAfter = false;
 let networkReady = false;
 let networkChecking = false;
 let sequenceStarted = false;
@@ -132,21 +131,11 @@ async function registerEvents() {
     renderTrack();
     updateProgress(payload);
   });
-  await listen('launch-finished', ({ payload }) => {
-    if (payload) {
-      setMessage('正在检查更新…');
-    } else {
-      invoke('dismiss_launch_progress');
-    }
+  await listen('launch-finished', () => {
+    invoke('dismiss_launch_progress');
   });
   await listen('update-status', ({ payload }) => setMessage(payload));
-  await listen('update-current', async ({ payload }) => {
-    if (checkAfter) {
-      await invoke('close_launch_progress');
-      return;
-    }
-    setMessage(payload);
-  });
+  await listen('update-current', ({ payload }) => setMessage(payload));
   await listen('update-error', ({ payload }) => setMessage(payload, 'error'));
   await listen('update-available', ({ payload }) => {
     $('updateMessage').textContent = `发现版本 ${payload.version}（当前版本 ${payload.currentVersion}）。下载后将替换程序并自动重启。`;
@@ -164,13 +153,12 @@ async function initialize() {
     config.entries ||= [];
     config.networkTarget ||= '';
     defaultIcon = await invoke('default_icon');
-    checkAfter = Boolean(request.checkAfter);
     networkChecking = hasNetworkItem();
     sequenceStarted = !networkChecking && config.entries.length > 0;
     renderTrack();
     setMessage('');
     await loadIcons();
-    await invoke('run_sequence', { config, checkAfter });
+    await invoke('run_sequence', { config });
   } catch (error) {
     setMessage(String(error), 'error');
   }
@@ -206,7 +194,6 @@ $('settingsButton').addEventListener('click', async () => {
 });
 $('laterButton').addEventListener('click', () => {
   $('updateModal').hidden = true;
-  if (checkAfter) invoke('close_launch_progress');
 });
 $('updateModal').addEventListener('click', (event) => {
   if (event.target === $('updateModal')) $('updateModal').hidden = true;

@@ -11,7 +11,7 @@ use std::{
     net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs},
     os::windows::{ffi::OsStrExt, process::CommandExt},
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex,
@@ -138,6 +138,15 @@ struct UpdateNotice {
 struct AvailableUpdate {
     version: String,
     url: String,
+    size: u64,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DownloadProgress {
+    downloaded_bytes: u64,
+    total_bytes: u64,
+    percent: u8,
 }
 
 #[derive(Default)]
@@ -147,7 +156,6 @@ struct PendingUpdate(Arc<Mutex<Option<AvailableUpdate>>>);
 #[serde(rename_all = "camelCase")]
 struct LaunchRequest {
     config: Config,
-    check_after: bool,
 }
 
 #[derive(Default)]
@@ -442,15 +450,8 @@ fn default_icon() -> String {
 }
 
 #[tauri::command]
-fn run_sequence(
-    app: AppHandle,
-    pending: State<'_, PendingUpdate>,
-    control: State<'_, LaunchControl>,
-    mut config: Config,
-    check_after: bool,
-) {
+fn run_sequence(app: AppHandle, control: State<'_, LaunchControl>, mut config: Config) {
     retain_enabled_entries(&mut config);
-    let pending = pending.0.clone();
     control.jump_to.store(NO_LAUNCH_JUMP, Ordering::SeqCst);
     control.network_ready.store(false, Ordering::SeqCst);
     control
@@ -460,7 +461,7 @@ fn run_sequence(
         started.clear();
     }
     let control = control.inner().clone();
-    thread::spawn(move || run_sequence_worker(app, pending, control, config, check_after));
+    thread::spawn(move || run_sequence_worker(app, control, config));
 }
 
 #[tauri::command]
@@ -489,7 +490,6 @@ async fn open_launch_progress(
     app: AppHandle,
     pending: State<'_, PendingLaunch>,
     mut config: Config,
-    check_after: bool,
 ) -> Result<(), String> {
     retain_enabled_entries(&mut config);
     if let Some(window) = app.get_webview_window("launch-progress") {
@@ -499,10 +499,7 @@ async fn open_launch_progress(
         return Ok(());
     }
 
-    *pending.0.lock().map_err(|_| "启动进度请求不可用")? = Some(LaunchRequest {
-        config,
-        check_after,
-    });
+    *pending.0.lock().map_err(|_| "启动进度请求不可用")? = Some(LaunchRequest { config });
 
     let window = match WebviewWindowBuilder::new(
         &app,
@@ -599,7 +596,7 @@ fn install_update(app: AppHandle, pending: State<'_, PendingUpdate>) -> Result<(
     );
     thread::spawn(move || {
         let version = update.version.clone();
-        match download_update(&update) {
+        match download_update(&app, &update) {
             Ok(()) => {
                 let _ = app.emit(
                     "update-status",
@@ -616,13 +613,7 @@ fn install_update(app: AppHandle, pending: State<'_, PendingUpdate>) -> Result<(
     Ok(())
 }
 
-fn run_sequence_worker(
-    app: AppHandle,
-    pending: Arc<Mutex<Option<AvailableUpdate>>>,
-    control: LaunchControl,
-    config: Config,
-    check_after: bool,
-) {
+fn run_sequence_worker(app: AppHandle, control: LaunchControl, config: Config) {
     let target = config.network_target.trim();
     if !target.is_empty() {
         loop {
@@ -812,10 +803,7 @@ fn run_sequence_worker(
         index += 1;
     }
     control.network_ready.store(false, Ordering::SeqCst);
-    let _ = app.emit("launch-finished", check_after);
-    if check_after {
-        check_updates_worker(app, pending);
-    }
+    let _ = app.emit("launch-finished", ());
 }
 
 fn window_close_delay(entry: &LaunchEntry) -> Option<u32> {
@@ -1084,18 +1072,89 @@ fn check_for_update() -> Result<Option<AvailableUpdate>, String> {
         .get("browser_download_url")
         .and_then(|v| v.as_str())
         .ok_or("更新附件缺少下载地址")?;
+    let size = asset.get("size").and_then(|v| v.as_u64()).unwrap_or(0);
     Ok(Some(AvailableUpdate {
         version: tag.to_string(),
         url: url.to_string(),
+        size,
     }))
 }
 
-fn download_update(update: &AvailableUpdate) -> Result<(), String> {
+fn download_update(app: &AppHandle, update: &AvailableUpdate) -> Result<(), String> {
     let temp = std::env::temp_dir().join(format!(
         "StartupLauncher-download-{}.exe",
         std::process::id()
     ));
-    run_curl(&update.url, Some(&temp))?;
+    let download = |url: &str| -> Result<(), String> {
+        let mut command = Command::new("curl.exe");
+        command
+            .args([
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--location",
+                "--connect-timeout",
+                "5",
+                "--max-time",
+                "300",
+                "--output",
+            ])
+            .arg(&temp)
+            .arg(url)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let mut child = command
+            .creation_flags(0x08000000)
+            .spawn()
+            .map_err(|e| format!("启动系统 curl.exe 失败：{e}"))?;
+        let mut last_percent = u8::MAX;
+        loop {
+            let downloaded = fs::metadata(&temp).map(|file| file.len()).unwrap_or(0);
+            let percent = if update.size == 0 {
+                0
+            } else {
+                ((downloaded.saturating_mul(100) / update.size).min(99)) as u8
+            };
+            if percent != last_percent {
+                let _ = app.emit(
+                    "update-progress",
+                    DownloadProgress {
+                        downloaded_bytes: downloaded,
+                        total_bytes: update.size,
+                        percent,
+                    },
+                );
+                last_percent = percent;
+            }
+            match child.try_wait() {
+                Ok(Some(status)) if status.success() => break,
+                Ok(Some(status)) => {
+                    return Err(format!(
+                        "下载失败，curl 退出码：{}",
+                        status.code().unwrap_or(-1)
+                    ))
+                }
+                Ok(None) => thread::sleep(Duration::from_millis(150)),
+                Err(error) => return Err(format!("检查下载进度失败：{error}")),
+            }
+        }
+        let _ = app.emit(
+            "update-progress",
+            DownloadProgress {
+                downloaded_bytes: update.size,
+                total_bytes: update.size,
+                percent: 100,
+            },
+        );
+        Ok(())
+    };
+    if let Err(direct_error) = download(&update.url) {
+        let _ = fs::remove_file(&temp);
+        let proxy_url = format!("https://gh-proxy.org/{}", update.url);
+        download(&proxy_url).map_err(|proxy_error| {
+            format!("GitHub 直连下载失败（{direct_error}）；代理下载也失败（{proxy_error}）")
+        })?;
+    }
     let bytes = fs::read(&temp).map_err(|e| format!("读取更新文件失败：{e}"))?;
     let _ = fs::remove_file(&temp);
     prepare_self_update(&bytes)
